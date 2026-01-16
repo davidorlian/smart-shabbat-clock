@@ -1,22 +1,42 @@
 # Smart Shabbat Clock
 
-ESP32-based smart Shabbat clock for scheduled control of household loads, featuring RTC/NTP timekeeping, a web-based user interface, and RF communication to remote Shabbat switch units.
+ESP32-based smart Shabbat clock for scheduled control of household loads, featuring RTC/NTP timekeeping, a web-based user interface, and RF communication to remote Shabbat switch units (HC-12).
 
-## Demo Video
+## Demo
 - QR/Redirect: https://davidorlian.github.io/smart-shabbat-clock/demo/
-- Direct link: https://youtube.com/shorts/kuyBU1jBy3k
+- Video: https://youtube.com/shorts/kuyBU1jBy3k
 
 ## Repository Structure
-- `firmware/` – Embedded firmware (ESP32)
-- `docs/` – Project documentation (project book, diagrams)
-- `media/` – Images and demo assets
+- `firmware/` – ESP32 firmware (Arduino)
+- `docs/` – Documentation and demo redirect page (`docs/demo/`)
 
 ## Key Features
 - Weekly scheduling (ON/OFF events)
 - Automatic Shabbat mode support
-- Time synchronization via NTP with RTC fallback
+- NTP time sync with RTC (DS3231) fallback
 - Web UI for configuration and monitoring
-- RF link to remote switch units (HC-12)
+- RF communication to remote switch units (HC-12)
+
+## Quick Start (Arduino IDE)
+1. Open: `firmware/Smart_Shabbat_Clock/Smart_Shabbat_Clock.ino`
+2. Edit Wi-Fi credentials in `Smart_Shabbat_Clock.ino`:
+   - `const char* ssid     = "YOUR_SSID_HERE";`
+   - `const char* password = "YOUR_PASSWORD_HERE";`
+3. Select your ESP32 board + COM port in Arduino IDE.
+4. Install required libraries (below).
+5. Upload.
+
+## Dependencies
+The firmware uses common Arduino/ESP32 libraries, including:
+- `WiFi.h`
+- `WebServer.h` (ESP32 WebServer)
+- `Preferences.h`
+- `RTClib.h` (DS3231)
+- `LiquidCrystal_I2C.h`
+- `time.h`
+
+## Safety Note
+This project can control real household loads. Use proper isolation, fusing, and certified mains-rated hardware.
 
 ## Authors
 - Barak Ashwal
