@@ -64,6 +64,10 @@ void setLocalRelayState(bool newState) {
   digitalWrite(RELAY_LOCAL, newState ? HIGH : LOW);  
   relay_state = newState;                            
   Serial.printf("Relay state changed to %s\n", newState ? "ON" : "OFF");
+  // Persist relay state so power loss doesn't reset it
+  prefs.begin("state", false);
+  prefs.putBool("relay", relay_state);
+  prefs.end();
 }
 
 // Detects a "new build" by comparing __DATE__/__TIME__ with last saved value.
@@ -78,6 +82,26 @@ bool checkIfNewFlash() {
     return isNew;
 }
 
+// Persisted mode helpers (save/load only)
+void saveRelayMode(uint8_t mode) {
+  prefs.begin("state", false);
+  prefs.putUChar("relayMode", mode);
+  prefs.end();
+}
+
+void saveShabbatMode(bool mode) {
+  prefs.begin("state", false);
+  prefs.putBool("shabbat", mode);
+  prefs.end();
+}
+
+void loadPersistedModes() {
+  prefs.begin("state", true);
+  relayMode = prefs.getUChar("relayMode", relayMode);
+  shabbatMode = prefs.getBool("shabbat", shabbatMode);
+  prefs.end();
+}
+
 
 // ---------------------- Setup ----------------------
 void setup() {
@@ -85,45 +109,48 @@ void setup() {
   Serial.println();
   Serial.println("\nBooting Smart Shabbat Clock...");
 
-  // 1. Setup GPIOs
+  // 1) Start from a SAFE physical state (relay OFF).
   pinMode(RELAY_LOCAL, OUTPUT);
-  setLocalRelayState(false); // deterministic startup state
+  digitalWrite(RELAY_LOCAL, LOW);
   pinMode(BUTTON_OVERRIDE, INPUT_PULLUP);
 
-  // Optional peripherals (auto-detect)
+  // 2) Load persisted user modes from NVS.
+  loadPersistedModes();
+
+  // 3) Init optional peripherals (LCD/RTC auto-detect).
   Serial.println("Initializing I2C peripherals...");
   initPeripheralsSafely();
-  Serial.print("LCD Available: ");
-  Serial.println(lcdAvailable ? "YES" : "NO");
-  Serial.print("RTC Available: ");
-  Serial.println(rtcAvailable ? "YES" : "NO");
+  Serial.printf("LCD Available: %s\n", lcdAvailable ? "YES" : "NO");
+  Serial.printf("RTC Available: %s\n", rtcAvailable ? "YES" : "NO");
 
-  // 3. Setup Radio
+  // 4) Decide whether RTC time is trustworthy.
+  // If RTC lost power, time stays invalid until NTP/manual set fixes it.
+  if (rtcAvailable && !rtc.lostPower()) timeValid = true;
+  else timeValid = false;
+
+  // 5) Init HC-12 radio UART.
   HC12.begin(9600, SERIAL_8N1, HC12_RX, HC12_TX);
 
-  // 4. Connect WiFi
+  // 6) Start Wi-Fi connection (non-blocking at boot).
   connectToWiFi();
   lastWiFiAttempt = millis();
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts++ < 50) {
-    delay(100);
-  }
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WiFi connected. IP: ");
+    Serial.print("WiFi connected quickly. IP: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("WiFi connection failed.");
+    Serial.println("WiFi not connected yet (will retry in background).");
   }
 
-  // 5. Setup OTA
+  // 7) Init OTA.
   ArduinoOTA.setHostname("ShabbatClock");
   ArduinoOTA.begin();
   Serial.println("OTA ready.");
 
-  // 6. Sync Time
+  // 8) Attempt time sync at boot.
   syncTimeAtBoot();
 
-  // On a new firmware build, wipe schedule.
+  // 9) On a new firmware build, wipe schedule; otherwise load it.
   if (checkIfNewFlash()) {
     Serial.println("First boot");
     clearScheduleStorage();
@@ -131,17 +158,27 @@ void setup() {
     loadSchedule();
   }
 
-  // 7. Restore State
-  setRelayToLastEvent();
+  // 10) Restore relay state from authoritative mode logic.
+  if (relayMode == 0) {
+    setLocalRelayState(false);      // manual force OFF
+  } else if (relayMode == 1) {
+    setLocalRelayState(true);       // manual force ON
+  } else if (timeValid) {           // AUTO
+    setRelayToLastEvent();
+  } else {
+    setLocalRelayState(false);      // AUTO but time invalid => stay safe OFF
+  }
 
-  // 8. Start Web Server
+  // 11) Start web server.
   initWebServer(); 
   server.begin();
   Serial.println("Web server started.");
   Serial.println("Setup complete. System is ready.\n");
-  lcd.clear();
-  lcd.print(WiFi.localIP());
-  delay(1500);
+  if (lcdAvailable) {
+    lcd.clear();
+    lcd.print(WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("No WiFi"));
+    delay(300);
+  }
 }
 
 // ---------------------- Loop ----------------------

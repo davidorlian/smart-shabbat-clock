@@ -13,7 +13,6 @@ extern uint8_t relayMode;
 extern struct tm timeinfo;
 extern bool rtcAvailable;
 void setLocalRelayState(bool);
-void setRelayOppositeToNextEvent();
 void setRelayToLastEvent();
 void saveSchedule();
 void normalizeSchedule();
@@ -51,13 +50,14 @@ void handleCommand() {
     if (!server.hasArg("c")) { server.send(400, "text/plain", "Missing cmd"); return; }
     String c = server.arg("c");
 
-    if (c == "relay_on")  { relayMode = 1; setLocalRelayState(true);  server.send(204,"text/plain",""); return; }
-    if (c == "relay_off") { relayMode = 0; setLocalRelayState(false); server.send(204,"text/plain",""); return; }
-    if (c == "relay_auto"){ relayMode = 2; if (timeValid) setRelayOppositeToNextEvent(); server.send(204,"text/plain",""); return; }
+    if (c == "relay_on")  { relayMode = 1; saveRelayMode(relayMode); setLocalRelayState(true);  server.send(204,"text/plain",""); return; }
+    if (c == "relay_off") { relayMode = 0; saveRelayMode(relayMode); setLocalRelayState(false); server.send(204,"text/plain",""); return; }
+    if (c == "relay_auto"){ relayMode = 2; saveRelayMode(relayMode); if (timeValid) setRelayToLastEvent(); server.send(204,"text/plain",""); return; }
 
     if (c == "shabbat") {
       if (sendHC12AndWaitAck("shabbat")) {
         shabbatMode = true;
+        saveShabbatMode(shabbatMode);
         server.send(204, "text/plain", "");
       } else {
         server.send(504, "text/plain", "HC-12 no ACK");
@@ -68,6 +68,7 @@ void handleCommand() {
     if (c == "week") {
       if (sendHC12AndWaitAck("week")) {
         shabbatMode = false;
+        saveShabbatMode(shabbatMode);
         server.send(204, "text/plain", "");
       } else {
         server.send(504, "text/plain", "HC-12 no ACK");
