@@ -16,12 +16,19 @@
 #include "web_api.h"
 #include "peripherals.h"
 #include "time_utils.h"
+#include "cloud_sync.h"
+#include "wifi_config.h"
 
 // ---------------------- WiFi Settings ----------------------
-// CHANGE HERE: WiFi name/password + timezone offset (seconds).
-const char* ssid     = "YOUR_SSID_HERE";
-const char* password = "YOUR_PASSWORD_HERE";
-const long gmtOffset_sec = 3 * 3600;
+// Local credentials are defined in gitignored wifi_config.h.
+#ifndef WIFI_SSID
+#error "Missing WIFI_SSID. Create firmware/Smart_Shabbat_Clock/wifi_config.h from wifi_config.example.h."
+#endif
+#ifndef WIFI_PASSWORD
+#error "Missing WIFI_PASSWORD. Create firmware/Smart_Shabbat_Clock/wifi_config.h from wifi_config.example.h."
+#endif
+const char* ssid     = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 struct tm timeinfo;  // used by getLocalTime()
 
 // ---------------------- Hardware Pins ----------------------
@@ -158,6 +165,9 @@ void setup() {
     loadSchedule();
   }
 
+  // Correct the local-time RTC across Israel DST transitions before restoring AUTO state.
+  tickRtcDstCorrection();
+
   // 10) Restore relay state from authoritative mode logic.
   if (relayMode == 0) {
     setLocalRelayState(false);      // manual force OFF
@@ -173,6 +183,7 @@ void setup() {
   initWebServer(); 
   server.begin();
   Serial.println("Web server started.");
+  initCloudSync();
   Serial.println("Setup complete. System is ready.\n");
   if (lcdAvailable) {
     lcd.clear();
@@ -197,6 +208,8 @@ void loop() {
     lastDisplayUpdate = millis();
   }
 
+  tickRtcDstCorrection();
+
   // Apply schedule logic if in AUTO mode and time is valid
   if (timeValid) applyScheduleLogic();
   // Check WiFi connection periodically
@@ -211,4 +224,7 @@ void loop() {
 
   // Periodically sync NTP to RTC
   tickTimeSync();
+
+  // Cloud command/status broker. Local logic remains authoritative.
+  tickCloudSync();
 }

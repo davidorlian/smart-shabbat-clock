@@ -1,4 +1,5 @@
 #include "web_api.h"
+#include "control_actions.h"
 #include "schedule.h"
 #include "hc12_comm.h"
 #include "index_page.h"
@@ -50,29 +51,18 @@ void handleCommand() {
     if (!server.hasArg("c")) { server.send(400, "text/plain", "Missing cmd"); return; }
     String c = server.arg("c");
 
-    if (c == "relay_on")  { relayMode = 1; saveRelayMode(relayMode); setLocalRelayState(true);  server.send(204,"text/plain",""); return; }
-    if (c == "relay_off") { relayMode = 0; saveRelayMode(relayMode); setLocalRelayState(false); server.send(204,"text/plain",""); return; }
-    if (c == "relay_auto"){ relayMode = 2; saveRelayMode(relayMode); if (timeValid) setRelayToLastEvent(); server.send(204,"text/plain",""); return; }
-
-    if (c == "shabbat") {
-      if (sendHC12AndWaitAck("shabbat")) {
-        shabbatMode = true;
-        saveShabbatMode(shabbatMode);
-        server.send(204, "text/plain", "");
-      } else {
-        server.send(504, "text/plain", "HC-12 no ACK");
-      }
+    if (c == "relay_on" || c == "relay_off" || c == "relay_auto") {
+      String mode = (c == "relay_on") ? "on" : ((c == "relay_off") ? "off" : "auto");
+      ActionResult result = applyRelayModeAction(mode);
+      if (result.ok) server.send(204, "text/plain", "");
+      else server.send(400, "text/plain", result.message);
       return;
     }
 
-    if (c == "week") {
-      if (sendHC12AndWaitAck("week")) {
-        shabbatMode = false;
-        saveShabbatMode(shabbatMode);
-        server.send(204, "text/plain", "");
-      } else {
-        server.send(504, "text/plain", "HC-12 no ACK");
-      }
+    if (c == "shabbat" || c == "week") {
+      ActionResult result = applyShabbatModeAction(c);
+      if (result.ok) server.send(204, "text/plain", "");
+      else server.send(result.code == "hc12_no_ack" ? 504 : 400, "text/plain", result.message);
       return;
     }
 
@@ -174,11 +164,21 @@ void handleSetTime() {
     t.tm_hour = H;
     t.tm_min  = M;
     t.tm_sec  = S;
+    t.tm_isdst = -1;
+    ensureLocalTimezoneConfigured();
     time_t epoch = mktime(&t);
+    if (epoch == (time_t)-1) {
+      server.send(400, "Invalid local time");
+      return;
+    }
     struct timeval now = { .tv_sec = epoch, .tv_usec = 0 };
     settimeofday(&now, nullptr);
 
-    if (rtcAvailable) rtc.adjust(DateTime(y, m, d, H, M, S));
+    if (rtcAvailable) {
+      rtc.adjust(DateTime(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                          t.tm_hour, t.tm_min, t.tm_sec));
+    }
+    updateRtcDstStateFromLocalTime(t);
     timeValid = true;
 
     if (relayMode == 2) setRelayToLastEvent();

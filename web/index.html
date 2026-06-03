@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Shabbat Clock Cloud</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Smart Shabbat Clock</h1>
+        <p id="connectionLabel">Not connected</p>
+      </div>
+      <button id="signOutButton" class="secondary" type="button" hidden>Sign out</button>
+    </header>
+
+    <section id="authPanel" class="panel">
+      <h2>Cloud Sign In</h2>
+      <form id="signInForm" class="form">
+        <label>
+          Email
+          <input id="emailInput" type="email" autocomplete="username" required>
+        </label>
+        <label>
+          Password
+          <input id="passwordInput" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section id="controlPanel" class="layout" hidden>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Status</h2>
+          <span id="lastSeen">Waiting for device</span>
+        </div>
+        <dl class="status-grid">
+          <div><dt>Relay</dt><dd id="relayStatus">--</dd></div>
+          <div><dt>Mode</dt><dd id="relayModeStatus">--</dd></div>
+          <div><dt>Shabbat</dt><dd id="shabbatStatus">--</dd></div>
+          <div><dt>Time</dt><dd id="timeStatus">--</dd></div>
+          <div><dt>Time valid</dt><dd id="timeValidStatus">--</dd></div>
+          <div><dt>HC-12</dt><dd id="hc12Status">--</dd></div>
+          <div><dt>Last seq</dt><dd id="lastSeqStatus">--</dd></div>
+          <div><dt>Schedule rev</dt><dd id="scheduleRevisionStatus">--</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Commands</h2>
+        <div class="button-row">
+          <button type="button" data-command="relay_mode" data-mode="on">Relay on</button>
+          <button type="button" data-command="relay_mode" data-mode="auto">Relay auto</button>
+          <button type="button" data-command="relay_mode" data-mode="off">Relay off</button>
+        </div>
+        <div class="button-row">
+          <button type="button" data-command="shabbat_mode" data-mode="shabbat">Shabbat</button>
+          <button type="button" data-command="shabbat_mode" data-mode="week">Week</button>
+        </div>
+        <button id="replaceScheduleButton" class="secondary" type="button">Send current schedule snapshot</button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Schedule</h2>
+          <span id="scheduleCount">0 events</span>
+        </div>
+        <div id="scheduleList" class="schedule-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Last Command</h2>
+        <dl class="status-grid compact">
+          <div><dt>Command ID</dt><dd id="lastCommandId">--</dd></div>
+          <div><dt>Seq</dt><dd id="lastCommandSeq">--</dd></div>
+          <div><dt>Type</dt><dd id="lastCommandType">--</dd></div>
+          <div><dt>Command result</dt><dd id="ackStatus">--</dd></div>
+        </dl>
+      </section>
+    </section>
+
+    <p id="message" class="message" role="status"></p>
+  </main>
+</body>
+</html>

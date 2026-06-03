@@ -1,0 +1,193 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "roles": {
+      ".read": false,
+      ".write": false
+    },
+    "devices": {
+      "$deviceId": {
+        ".write": false,
+        "meta": {
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".validate": "newData.hasChildren(['deviceUid', 'name'])",
+          "deviceUid": {
+            ".validate": "newData.isString()"
+          },
+          "name": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "control": {
+          "nextSeq": {
+            ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+            ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true && newData.exists() && newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "commands": {
+          ".indexOn": ["seq"],
+          ".read": "auth != null && (root.child('roles').child('admins').child(auth.uid).val() === true || root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid)",
+          "$commandId": {
+            ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true && !data.exists() && newData.exists()",
+            ".validate": "newData.hasChildren(['seq', 'type', 'payload', 'createdBy', 'createdAt']) && ((newData.child('type').val() === 'relay_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'on' || newData.child('payload').child('mode').val() === 'off' || newData.child('payload').child('mode').val() === 'auto')) || (newData.child('type').val() === 'shabbat_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'shabbat' || newData.child('payload').child('mode').val() === 'week')) || (newData.child('type').val() === 'replace_schedule' && newData.child('payload').hasChildren(['baseScheduleRevision', 'events']) && !newData.child('payload').child('mode').exists() && newData.child('payload').child('baseScheduleRevision').isNumber() && newData.child('payload').child('baseScheduleRevision').val() >= 0 && !newData.child('payload').child('events').isString() && !newData.child('payload').child('events').isNumber() && !newData.child('payload').child('events').isBoolean()))",
+            "seq": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "type": {
+              ".validate": "newData.isString() && (newData.val() === 'relay_mode' || newData.val() === 'shabbat_mode' || newData.val() === 'replace_schedule')"
+            },
+            "payload": {
+              "mode": {
+                ".validate": "newData.isString() && (newData.val() === 'on' || newData.val() === 'off' || newData.val() === 'auto' || newData.val() === 'shabbat' || newData.val() === 'week')"
+              },
+              "baseScheduleRevision": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "events": {
+                ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
+                "$eventIndex": {
+                  ".validate": "($eventIndex === '0' || $eventIndex === '1' || $eventIndex === '2' || $eventIndex === '3' || $eventIndex === '4' || $eventIndex === '5' || $eventIndex === '6' || $eventIndex === '7' || $eventIndex === '8' || $eventIndex === '9' || $eventIndex === '10' || $eventIndex === '11' || $eventIndex === '12' || $eventIndex === '13' || $eventIndex === '14' || $eventIndex === '15' || $eventIndex === '16' || $eventIndex === '17' || $eventIndex === '18' || $eventIndex === '19' || $eventIndex === '20' || $eventIndex === '21' || $eventIndex === '22' || $eventIndex === '23' || $eventIndex === '24' || $eventIndex === '25' || $eventIndex === '26' || $eventIndex === '27' || $eventIndex === '28' || $eventIndex === '29' || $eventIndex === '30' || $eventIndex === '31') && newData.hasChildren(['day', 'hour', 'minute', 'state'])",
+                  "day": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6"
+                  },
+                  "hour": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 23"
+                  },
+                  "minute": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 59"
+                  },
+                  "state": {
+                    ".validate": "newData.isString() && (newData.val() === 'on' || newData.val() === 'off')"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "createdBy": {
+              ".validate": "newData.isString() && newData.val() === auth.uid"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber() && newData.val() === now"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "acks": {
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          "$commandId": {
+            ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid && root.child('devices').child($deviceId).child('commands').child($commandId).exists() && !data.exists() && newData.exists()",
+            ".validate": "newData.hasChildren(['seq', 'ok', 'code', 'message', 'ackedAt']) && newData.child('seq').val() === root.child('devices').child($deviceId).child('commands').child($commandId).child('seq').val()",
+            "seq": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "ok": {
+              ".validate": "newData.isBoolean()"
+            },
+            "code": {
+              ".validate": "newData.isString()"
+            },
+            "message": {
+              ".validate": "newData.isString()"
+            },
+            "ackedAt": {
+              ".validate": "newData.isNumber() && newData.val() === now"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "state": {
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".write": false,
+          "status": {
+            ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['relay', 'relayMode', 'shabbat', 'time', 'timeValid', 'hc12Ok', 'lastSeen', 'lastProcessedSeq', 'scheduleRevision'])",
+            "relay": {
+              ".validate": "newData.isBoolean()"
+            },
+            "relayMode": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2"
+            },
+            "shabbat": {
+              ".validate": "newData.isBoolean()"
+            },
+            "time": {
+              ".validate": "newData.isString()"
+            },
+            "timeValid": {
+              ".validate": "newData.isBoolean()"
+            },
+            "hc12Ok": {
+              ".validate": "newData.isBoolean()"
+            },
+            "lastSeen": {
+              ".validate": "newData.isNumber() && newData.val() === now"
+            },
+            "lastProcessedSeq": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "scheduleRevision": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "schedule": {
+            ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['revision', 'events']) && !newData.child('events').isString() && !newData.child('events').isNumber() && !newData.child('events').isBoolean()",
+            "revision": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "events": {
+              ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
+              "$eventIndex": {
+                ".validate": "($eventIndex === '0' || $eventIndex === '1' || $eventIndex === '2' || $eventIndex === '3' || $eventIndex === '4' || $eventIndex === '5' || $eventIndex === '6' || $eventIndex === '7' || $eventIndex === '8' || $eventIndex === '9' || $eventIndex === '10' || $eventIndex === '11' || $eventIndex === '12' || $eventIndex === '13' || $eventIndex === '14' || $eventIndex === '15' || $eventIndex === '16' || $eventIndex === '17' || $eventIndex === '18' || $eventIndex === '19' || $eventIndex === '20' || $eventIndex === '21' || $eventIndex === '22' || $eventIndex === '23' || $eventIndex === '24' || $eventIndex === '25' || $eventIndex === '26' || $eventIndex === '27' || $eventIndex === '28' || $eventIndex === '29' || $eventIndex === '30' || $eventIndex === '31') && newData.hasChildren(['day', 'hour', 'minute', 'state'])",
+                "day": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6"
+                },
+                "hour": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 23"
+                },
+                "minute": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 59"
+                },
+                "state": {
+                  ".validate": "newData.isString() && (newData.val() === 'on' || newData.val() === 'off')"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

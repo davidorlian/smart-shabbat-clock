@@ -11,6 +11,7 @@ void setLocalRelayState(bool);
 
 ScheduleEntry schedule[MAX_EVENTS];
 uint8_t scheduleCount = 0;
+uint32_t scheduleRevision = 0;
 
 
 // ---------------------- Storage ----------------------
@@ -20,7 +21,9 @@ uint8_t scheduleCount = 0;
 void saveSchedule() {
   Serial.println("Saving schedule to Preferences...");
   prefs.begin("sched", false);
+  scheduleRevision++;
   prefs.putUChar("count", scheduleCount);
+  prefs.putUInt("revision", scheduleRevision);
   if (scheduleCount > 0) {
     prefs.putBytes("table", schedule, sizeof(ScheduleEntry) * scheduleCount);
   }
@@ -31,6 +34,7 @@ void saveSchedule() {
 void loadSchedule() {
   Serial.println("Loading schedule from Preferences...");
   prefs.begin("sched", true);
+  scheduleRevision = prefs.getUInt("revision", 0);
   uint8_t cnt = prefs.getUChar("count", 0);
   if (cnt > MAX_EVENTS) cnt = MAX_EVENTS;
   if (cnt > 0 && prefs.getBytes("table", schedule, sizeof(ScheduleEntry) * cnt) == sizeof(ScheduleEntry) * cnt) {
@@ -48,8 +52,10 @@ void clearScheduleStorage() {
   Serial.println("Clearing schedule...");
   prefs.begin("sched", false);
   prefs.clear(); // wipe namespace "sched"
+  prefs.putUInt("revision", 0);
   prefs.end();
   scheduleCount = 0;
+  scheduleRevision = 0;
   Serial.println("Schedule cleared.");
 }
 

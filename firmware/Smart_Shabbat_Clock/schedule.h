@@ -17,6 +17,7 @@ struct ScheduleEntry {
 };
 extern ScheduleEntry schedule[MAX_EVENTS];
 extern uint8_t scheduleCount;
+extern uint32_t scheduleRevision;
 
 void saveSchedule();
 void loadSchedule();

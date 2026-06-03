@@ -1,0 +1,6 @@
+firmware/Smart_Shabbat_Clock/wifi_config.h
+firmware/Smart_Shabbat_Clock/firebase_config.h
+.env.local
+web/firebase-config.js
+.firebase/
+initial-clock-data.json
