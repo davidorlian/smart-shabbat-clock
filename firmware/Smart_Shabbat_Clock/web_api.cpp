@@ -18,8 +18,13 @@ void setRelayToLastEvent();
 void saveSchedule();
 void normalizeSchedule();
 void sortSchedule();
+int findPreviousEffectiveEventIndex(uint8_t day, uint8_t hour, uint8_t minute);
 extern ScheduleEntry schedule[];
 extern uint8_t scheduleCount;
+
+static void reapplyAutoScheduleIfReady() {
+    if (relayMode == 2 && timeValid) setRelayToLastEvent();
+}
 
 // ---------------------- Route Handlers ----------------------
 
@@ -72,7 +77,7 @@ void handleCommand() {
 // Add or update a schedule event
 void handleScheduleUpdate() {
     if (!server.hasArg("hour") || !server.hasArg("minute") || !server.hasArg("state") || !server.hasArg("day")) {
-      server.send(400, "Missing args");
+      server.send(400, "text/plain", "Missing args");
       return;
     }
 
@@ -86,7 +91,7 @@ void handleScheduleUpdate() {
     bool state = (server.arg("state") == "on");
     uint8_t day = server.arg("day").toInt();
     if (hour > 23 || minute > 59 || day > 6) {
-      server.send(400, "Invalid values");
+      server.send(400, "text/plain", "Invalid values");
       return;
     }
 
@@ -96,32 +101,40 @@ void handleScheduleUpdate() {
 
         // Case 2: Same state — nothing to change
         if (schedule[i].state == state) {
-          server.send(409, "No change - identical event already exists");
+          server.send(409, "text/plain", "No change - identical event already exists");
           return;
         }
 
         // Case 1: Different state — update existing entry
         schedule[i].state = state;
-        sortSchedule();
-        normalizeSchedule(); // keep only transitions
+        normalizeSchedule();
         saveSchedule();
-        server.send(200, "Schedule updated");
+        reapplyAutoScheduleIfReady();
+        server.send(200, "text/plain", "Schedule updated");
         return;
       }
     }
 
     // Otherwise add new entry (if there is capacity).
     if (scheduleCount >= MAX_EVENTS) {
-      server.send(400, "Schedule full");
+      server.send(400, "text/plain", "Schedule full");
       return;
+    }
+
+    if (scheduleCount > 0) {
+      int previousIdx = findPreviousEffectiveEventIndex(day, hour, minute);
+      if (previousIdx >= 0 && schedule[previousIdx].state == state) {
+        server.send(409, "text/plain", "No change - previous effective event already has requested state");
+        return;
+      }
     }
 
     ScheduleEntry e{hour, minute, state, day};
     schedule[scheduleCount++] = e;
-    sortSchedule();
-    normalizeSchedule();     // compress consecutive duplicates
+    normalizeSchedule();
     saveSchedule();
-    server.send(200, "Schedule added");
+    reapplyAutoScheduleIfReady();
+    server.send(200, "text/plain", "Schedule added");
 }
 
 // Return the full schedule as JSON
@@ -189,13 +202,13 @@ void handleSetTime() {
 // Delete a specific event
 void handleScheduleDelete() {
     if (!server.hasArg("day") || !server.hasArg("hour") || !server.hasArg("minute")) {
-      server.send(400, "Missing args"); return;
+      server.send(400, "text/plain", "Missing args"); return;
     }
     uint8_t day = server.arg("day").toInt();
     uint8_t hour = server.arg("hour").toInt();
     uint8_t minute = server.arg("minute").toInt();
     if (day > 6 || hour > 23 || minute > 59) {
-      server.send(400, "Invalid values"); return;
+      server.send(400, "text/plain", "Invalid values"); return;
     }
   
     int idx = -1;
@@ -204,7 +217,7 @@ void handleScheduleDelete() {
         idx = i; break;
       }
     }
-    if (idx < 0) { server.send(404, "Event not found"); return; }
+    if (idx < 0) { server.send(404, "text/plain", "Event not found"); return; }
   
     // Compact array (stable order after removal).
     for (int j = idx + 1; j < scheduleCount; j++) {
@@ -212,11 +225,11 @@ void handleScheduleDelete() {
     }
     scheduleCount--;
   
-    sortSchedule();
     normalizeSchedule();
     saveSchedule();
+    reapplyAutoScheduleIfReady();
   
-    server.send(200, "Event deleted");
+    server.send(200, "text/plain", "Event deleted");
 }
 
 // ---------------------- Web Server Init ----------------------

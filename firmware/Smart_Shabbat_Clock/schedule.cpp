@@ -2,7 +2,7 @@
 #include "time_utils.h"
 #include <RTClib.h>
 #include <Preferences.h>
-#include <algorithm> // For std::sort
+#include <algorithm>
 
 extern Preferences prefs;
 extern bool timeValid;
@@ -13,10 +13,9 @@ ScheduleEntry schedule[MAX_EVENTS];
 uint8_t scheduleCount = 0;
 uint32_t scheduleRevision = 0;
 
+static const uint16_t MINUTES_PER_DAY = 24 * 60;
 
 // ---------------------- Storage ----------------------
-// saveSchedule/loadSchedule/clearSchedule operate on NVS.
-// After any modification we sort and (optionally) normalize.
 
 void saveSchedule() {
   Serial.println("Saving schedule to Preferences...");
@@ -39,7 +38,7 @@ void loadSchedule() {
   if (cnt > MAX_EVENTS) cnt = MAX_EVENTS;
   if (cnt > 0 && prefs.getBytes("table", schedule, sizeof(ScheduleEntry) * cnt) == sizeof(ScheduleEntry) * cnt) {
     scheduleCount = cnt;
-    sortSchedule();
+    normalizeSchedule();
     Serial.printf("Loaded %d schedule entries.\n", scheduleCount);
   } else {
     scheduleCount = 0;
@@ -51,7 +50,7 @@ void loadSchedule() {
 void clearScheduleStorage() {
   Serial.println("Clearing schedule...");
   prefs.begin("sched", false);
-  prefs.clear(); // wipe namespace "sched"
+  prefs.clear();
   prefs.putUInt("revision", 0);
   prefs.end();
   scheduleCount = 0;
@@ -60,112 +59,152 @@ void clearScheduleStorage() {
 }
 
 // ---------------------- Schedule Logic ----------------------
-// sortSchedule orders by (day, hour, minute) ascending.
-// normalizeSchedule compresses consecutive same-state events per day
-// so no-ops are removed (keeps only state flips).
+
+uint16_t minuteOfWeek(const ScheduleEntry &entry) {
+  return minuteOfWeek(entry.day, entry.hour, entry.minute);
+}
+
+uint16_t minuteOfWeek(uint8_t day, uint8_t hour, uint8_t minute) {
+  return (uint16_t)day * MINUTES_PER_DAY + (uint16_t)hour * 60 + minute;
+}
+
+int compareScheduleEntries(const ScheduleEntry &a, const ScheduleEntry &b) {
+  uint16_t aMinute = minuteOfWeek(a);
+  uint16_t bMinute = minuteOfWeek(b);
+  if (aMinute < bMinute) return -1;
+  if (aMinute > bMinute) return 1;
+  return 0;
+}
+
+static int findEventAtOrBeforeMinute(uint16_t targetMinute, bool includeEqual) {
+  if (scheduleCount == 0) return -1;
+
+  int bestIdx = -1;
+  for (uint8_t i = 0; i < scheduleCount; i++) {
+    uint16_t eventMinute = minuteOfWeek(schedule[i]);
+    bool beforeTarget = includeEqual ? eventMinute <= targetMinute : eventMinute < targetMinute;
+    if (!beforeTarget) continue;
+    if (bestIdx < 0 || eventMinute > minuteOfWeek(schedule[bestIdx])) {
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx >= 0) return bestIdx;
+
+  bestIdx = 0;
+  for (uint8_t i = 1; i < scheduleCount; i++) {
+    if (minuteOfWeek(schedule[i]) > minuteOfWeek(schedule[bestIdx])) {
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+int findPreviousEffectiveEventIndex(uint8_t day, uint8_t hour, uint8_t minute) {
+  return findEventAtOrBeforeMinute(minuteOfWeek(day, hour, minute), false);
+}
+
+int findLastEventBeforeNow() {
+  if (!timeValid || scheduleCount == 0) return -1;
+
+  DateTime now = getCurrentDateTime();
+  return findEventAtOrBeforeMinute(minuteOfWeek(now.dayOfTheWeek(), now.hour(), now.minute()), true);
+}
+
+static int findNextEventAfterNow() {
+  if (!timeValid || scheduleCount == 0) return -1;
+
+  DateTime now = getCurrentDateTime();
+  uint16_t currentMinute = minuteOfWeek(now.dayOfTheWeek(), now.hour(), now.minute());
+  int bestIdx = -1;
+
+  for (uint8_t i = 0; i < scheduleCount; i++) {
+    uint16_t eventMinute = minuteOfWeek(schedule[i]);
+    if (eventMinute <= currentMinute) continue;
+    if (bestIdx < 0 || eventMinute < minuteOfWeek(schedule[bestIdx])) {
+      bestIdx = i;
+    }
+  }
+
+  if (bestIdx >= 0) return bestIdx;
+
+  bestIdx = 0;
+  for (uint8_t i = 1; i < scheduleCount; i++) {
+    if (minuteOfWeek(schedule[i]) < minuteOfWeek(schedule[bestIdx])) {
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
 void sortSchedule() {
-  // Sort events by Day -> Hour -> Minute
   Serial.println("Sorting schedule entries...");
-  std::sort(schedule, schedule + scheduleCount, [](const ScheduleEntry &a, const ScheduleEntry &b) {
-    if (a.day != b.day) return a.day < b.day;
-    if (a.hour != b.hour) return a.hour < b.hour;
-    return a.minute < b.minute;
+  std::stable_sort(schedule, schedule + scheduleCount, [](const ScheduleEntry &a, const ScheduleEntry &b) {
+    return compareScheduleEntries(a, b) < 0;
   });
   Serial.println("Schedule sorted.");
 }
 
-// Remove redundant events (e.g. ON followed by ON) to save space
 void normalizeSchedule() {
-  if (scheduleCount <= 1) return;
+  if (scheduleCount <= 1) {
+    sortSchedule();
+    return;
+  }
 
-  ScheduleEntry tmp[MAX_EVENTS];
-  uint8_t out = 0;
+  sortSchedule();
 
-  int lastDay   = -1;
-  int lastState = -1;
+  ScheduleEntry uniqueEvents[MAX_EVENTS];
+  uint8_t uniqueCount = 0;
 
-  for (int i = 0; i < scheduleCount; i++) {
-    const auto &e = schedule[i];
-
-    if (e.day != lastDay) {
-      // First event of a new day – always keep
-      tmp[out++] = e;
-      lastDay = e.day;
-      lastState = e.state;
+  for (uint8_t i = 0; i < scheduleCount; i++) {
+    if (uniqueCount > 0 && minuteOfWeek(schedule[i]) == minuteOfWeek(uniqueEvents[uniqueCount - 1])) {
+      uniqueEvents[uniqueCount - 1] = schedule[i];
     } else {
-      // Same day – keep only state flips to avoid redundant entries.
-      if ((int)e.state != lastState) {
-        tmp[out++] = e;
-        lastState = e.state;
-      }
+      uniqueEvents[uniqueCount++] = schedule[i];
     }
   }
 
-  // Commit back
-  for (int i = 0; i < out; i++) schedule[i] = tmp[i];
-  scheduleCount = out;
+  if (uniqueCount <= 1) {
+    if (uniqueCount == 1) schedule[0] = uniqueEvents[0];
+    scheduleCount = uniqueCount;
+    return;
+  }
+
+  ScheduleEntry normalized[MAX_EVENTS];
+  uint8_t normalizedCount = 0;
+
+  for (uint8_t i = 0; i < uniqueCount; i++) {
+    uint8_t previousIndex = (i == 0) ? uniqueCount - 1 : i - 1;
+    if (uniqueEvents[i].state != uniqueEvents[previousIndex].state) {
+      normalized[normalizedCount++] = uniqueEvents[i];
+    }
+  }
+
+  if (normalizedCount == 0) {
+    normalized[normalizedCount++] = uniqueEvents[0];
+  }
+
+  for (uint8_t i = 0; i < normalizedCount; i++) schedule[i] = normalized[i];
+  scheduleCount = normalizedCount;
 }
 
-// AUTO mode: find the latest event (<= now) for today and apply it.
-// CHANGE HERE: adjust schedule behavior in AUTO mode.
-// If nothing yet today, relay remains as-is; "setRelayToLastEvent()" at boot
-// handles continuity across days.
 void applyScheduleLogic() {
-  if (!timeValid) return; 
+  if (!timeValid) return;
   if (relayMode != 2 || scheduleCount == 0) return;
 
-  DateTime now = getCurrentDateTime();
-  uint8_t currentDay = now.dayOfTheWeek();
-  uint8_t currentHour = now.hour();
-  uint8_t currentMinute = now.minute();
-  int lastIdx = -1;
-
-  for (int i = 0; i < scheduleCount; i++) {
-    const auto &e = schedule[i];
-    if (e.day != currentDay) continue;
-    if (e.hour < currentHour || (e.hour == currentHour && e.minute <= currentMinute)) {
-      if (lastIdx < 0 ||
-          e.hour > schedule[lastIdx].hour ||
-          (e.hour == schedule[lastIdx].hour && e.minute > schedule[lastIdx].minute)) {
-        lastIdx = i;
-      }
-    }
-  }
+  int lastIdx = findLastEventBeforeNow();
   if (lastIdx >= 0) {
     setLocalRelayState(schedule[lastIdx].state);
-  } 
+  }
 }
 
 // ---------------------- Relay Logic ----------------------
-// Sets the relay opposite to the next scheduled event from "now" forward.
-// Used when switching to AUTO mode to ensure correct initial state.
-// Useful when switching to AUTO so that the next event will flip state.
+
 void setRelayOppositeToNextEvent() {
   if (!timeValid || scheduleCount == 0) return;
   Serial.println("Setting relay opposite to next scheduled event...");
 
-  DateTime now = getCurrentDateTime();
-  uint8_t currentDay = now.dayOfTheWeek();
-  uint8_t currentHour = now.hour();
-  uint8_t currentMinute = now.minute();
-  int nextIdx = -1;
-
-  // Scan the coming 7 days (wrap-around)
-  for (int dOffset = 0; dOffset < 7 && nextIdx < 0; dOffset++) {
-    uint8_t dayToCheck = (currentDay + dOffset) % 7;
-    for (int i = 0; i < scheduleCount; i++) {
-      const auto &e = schedule[i];
-      if (e.day != dayToCheck) continue;
-      // On the same day, ignore times that already passed.
-      if (dOffset == 0 && (e.hour < currentHour || (e.hour == currentHour && e.minute <= currentMinute))) continue;
-      if (nextIdx < 0 ||
-          e.day < schedule[nextIdx].day ||
-          (e.day == schedule[nextIdx].day && e.hour < schedule[nextIdx].hour) ||
-          (e.day == schedule[nextIdx].day && e.hour == schedule[nextIdx].hour && e.minute < schedule[nextIdx].minute)) {
-        nextIdx = i;
-      }
-    }
-  }
+  int nextIdx = findNextEventAfterNow();
   if (nextIdx >= 0) {
     setLocalRelayState(!schedule[nextIdx].state);
     Serial.printf("Relay set opposite to event at %02d:%02d on day %d\n",
@@ -173,37 +212,14 @@ void setRelayOppositeToNextEvent() {
   }
 }
 
-// At boot, apply the last event that occurred (searching backward up to 7 days)
-// so the device resumes in the correct state even after power loss.
 void setRelayToLastEvent() {
   if (!timeValid || scheduleCount == 0) return;
   Serial.println("Setting relay to last event state...");
 
-  DateTime now = getCurrentDateTime();
-  uint8_t currentDay = now.dayOfTheWeek();
-  uint8_t currentHour = now.hour();
-  uint8_t currentMinute = now.minute();
-  int lastIdx = -1;
-
-  for (int dOffset = 0; dOffset < 7 && lastIdx < 0; dOffset++) {
-    int8_t dayToCheck = (currentDay - dOffset + 7) % 7;
-    for (int i = 0; i < scheduleCount; i++) {
-      const auto &e = schedule[i];
-      if (e.day != dayToCheck) continue;
-      // On the same day, only consider times that already happened.
-      if (dOffset == 0 && (e.hour > currentHour || (e.hour == currentHour && e.minute > currentMinute))) continue;
-      if (lastIdx < 0 ||
-          e.day > schedule[lastIdx].day ||
-          (e.day == schedule[lastIdx].day && e.hour > schedule[lastIdx].hour) ||
-          (e.day == schedule[lastIdx].day && e.hour == schedule[lastIdx].hour && e.minute > schedule[lastIdx].minute)) {
-        lastIdx = i;
-      }
-    }
-  }
+  int lastIdx = findLastEventBeforeNow();
   if (lastIdx >= 0) {
     setLocalRelayState(schedule[lastIdx].state);
     Serial.printf("Relay set to last event at %02d:%02d on day %d\n",
                   schedule[lastIdx].hour, schedule[lastIdx].minute, schedule[lastIdx].day);
   }
 }
-

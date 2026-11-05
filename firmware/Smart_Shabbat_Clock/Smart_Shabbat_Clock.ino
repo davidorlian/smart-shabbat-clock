@@ -150,7 +150,7 @@ void setup() {
   }
 
   // 7) Init OTA.
-  ArduinoOTA.setHostname("ShabbatClock");
+  ArduinoOTA.setHostname("smart-shabbat-clock");
   ArduinoOTA.begin();
   Serial.println("OTA ready.");
 

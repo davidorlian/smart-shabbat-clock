@@ -125,6 +125,7 @@ void connectToWiFi() {
     lcd.clear();
     lcd.print("WiFi: Trying");
   }
+  WiFi.setHostname("smart-shabbat-clock");
   WiFi.begin(ssid, password);
   Serial.printf("Connecting to WiFi SSID: %s...\n", ssid);
 }

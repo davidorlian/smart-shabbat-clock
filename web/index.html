@@ -4,86 +4,210 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Smart Shabbat Clock Cloud</title>
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar">
-      <div>
-        <h1>Smart Shabbat Clock</h1>
-        <p id="connectionLabel">Not connected</p>
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="brand-flame"></span>
+          <span class="brand-candle"></span>
+        </div>
+        <div>
+          <p id="connectionLabel" class="eyebrow">Cloud Control</p>
+          <h1>Smart Shabbat Clock</h1>
+        </div>
       </div>
       <button id="signOutButton" class="secondary" type="button" hidden>Sign out</button>
     </header>
 
-    <section id="authPanel" class="panel">
-      <h2>Cloud Sign In</h2>
-      <form id="signInForm" class="form">
-        <label>
-          Email
-          <input id="emailInput" type="email" autocomplete="username" required>
-        </label>
-        <label>
-          Password
-          <input id="passwordInput" type="password" autocomplete="current-password" required>
-        </label>
-        <button type="submit">Sign in</button>
-      </form>
+    <p id="message" class="message message-banner" role="status" hidden></p>
+
+    <section id="authPanel" class="auth-layout">
+      <section class="panel auth-card">
+        <p class="eyebrow">Welcome</p>
+        <h2>Sign in</h2>
+        <form id="signInForm" class="form">
+          <label>
+            Email
+            <input id="emailInput" type="email" autocomplete="username" required>
+          </label>
+          <label>
+            Password
+            <input id="passwordInput" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit">Sign in</button>
+        </form>
+      </section>
+
+      <aside class="sabbath-panel" aria-label="Shabbat greeting">
+        <div class="candle-scene" aria-hidden="true">
+          <span class="scene-flame left"></span>
+          <span class="scene-flame right"></span>
+          <span class="scene-candle left"></span>
+          <span class="scene-candle right"></span>
+          <span class="scene-base"></span>
+        </div>
+        <h2>Shabbat Shalom</h2>
+        <p>A calm place to prepare the clock before and after Shabbat.</p>
+      </aside>
     </section>
 
-    <section id="controlPanel" class="layout" hidden>
-      <section class="panel">
+    <section id="accessPanel" class="panel conference-access" hidden>
+      <h2>Control access</h2>
+      <p id="accessStatus" role="status">Checking permissions...</p>
+    </section>
+
+    <section id="conferencePanel" class="panel conference-access" hidden>
+      <div class="panel-header">
+        <h2>Conference mode</h2>
+        <strong id="conferenceStatus">Closed</strong>
+      </div>
+      <p>Visitors who scan the QR code can control the physical clock. A new visitor takes control from the previous guest.</p>
+      <p>Each conference uses a new link. Copy it after starting the conference.</p>
+      <div id="conferenceLinkBox" hidden>
+        <label for="conferenceJoinLink">Conference QR URL</label>
+        <input id="conferenceJoinLink" readonly aria-label="Conference QR link">
+        <div class="button-row">
+          <button id="copyJoinLinkButton" type="button" class="secondary">Copy QR link</button>
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="conferenceToggleButton" type="button">Start conference</button>
+      </div>
+    </section>
+
+    <section id="controlPanel" class="dashboard" hidden>
+      <section class="panel status-panel">
         <div class="panel-header">
-          <h2>Status</h2>
+          <div>
+            <p class="eyebrow">Current Clock State</p>
+            <h2 id="stateSummary">Waiting for device</h2>
+          </div>
           <span id="lastSeen">Waiting for device</span>
         </div>
-        <dl class="status-grid">
-          <div><dt>Relay</dt><dd id="relayStatus">--</dd></div>
-          <div><dt>Mode</dt><dd id="relayModeStatus">--</dd></div>
-          <div><dt>Shabbat</dt><dd id="shabbatStatus">--</dd></div>
-          <div><dt>Time</dt><dd id="timeStatus">--</dd></div>
-          <div><dt>Time valid</dt><dd id="timeValidStatus">--</dd></div>
-          <div><dt>HC-12</dt><dd id="hc12Status">--</dd></div>
-          <div><dt>Last seq</dt><dd id="lastSeqStatus">--</dd></div>
-          <div><dt>Schedule rev</dt><dd id="scheduleRevisionStatus">--</dd></div>
-        </dl>
+        <p id="nextEventSummary" class="summary-line">Next event: --</p>
+        <p id="currentTimeSummary" class="summary-line">Current time: --</p>
+        <div class="status-badges" aria-label="Clock health">
+          <span id="timeStatusBadge" class="value-badge">Time: --</span>
+          <span id="hc12StatusBadge" class="value-badge">HC-12: --</span>
+          <span id="scheduleCount" class="value-badge">Schedule: 0 events</span>
+        </div>
       </section>
 
-      <section class="panel">
-        <h2>Commands</h2>
-        <div class="button-row">
-          <button type="button" data-command="relay_mode" data-mode="on">Relay on</button>
-          <button type="button" data-command="relay_mode" data-mode="auto">Relay auto</button>
-          <button type="button" data-command="relay_mode" data-mode="off">Relay off</button>
-        </div>
-        <div class="button-row">
-          <button type="button" data-command="shabbat_mode" data-mode="shabbat">Shabbat</button>
-          <button type="button" data-command="shabbat_mode" data-mode="week">Week</button>
-        </div>
-        <button id="replaceScheduleButton" class="secondary" type="button">Send current schedule snapshot</button>
-      </section>
-
-      <section class="panel">
+      <section class="panel command-panel">
         <div class="panel-header">
-          <h2>Schedule</h2>
-          <span id="scheduleCount">0 events</span>
+          <div>
+            <p class="eyebrow">Quick Actions</p>
+            <h2>Control the clock</h2>
+          </div>
         </div>
+
+        <div class="control-group">
+          <p class="group-label">Relay</p>
+          <div class="button-row segmented">
+            <button class="command-button" type="button" data-command="relay_mode" data-mode="on">On</button>
+            <button class="command-button" type="button" data-command="relay_mode" data-mode="auto">Auto</button>
+            <button class="command-button" type="button" data-command="relay_mode" data-mode="off">Off</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <p class="group-label">Mode</p>
+          <div class="button-row segmented">
+            <button class="command-button" type="button" data-command="shabbat_mode" data-mode="shabbat">Shabbat</button>
+            <button class="command-button" type="button" data-command="shabbat_mode" data-mode="week">Week</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel schedule-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Schedule</p>
+            <h2>Schedule</h2>
+          </div>
+          <button id="editScheduleButton" class="secondary" type="button">Edit schedule</button>
+        </div>
+        <p id="scheduleSyncWarning" class="message warning" role="status" hidden></p>
         <div id="scheduleList" class="schedule-list"></div>
       </section>
 
-      <section class="panel">
-        <h2>Last Command</h2>
-        <dl class="status-grid compact">
-          <div><dt>Command ID</dt><dd id="lastCommandId">--</dd></div>
-          <div><dt>Seq</dt><dd id="lastCommandSeq">--</dd></div>
-          <div><dt>Type</dt><dd id="lastCommandType">--</dd></div>
-          <div><dt>Command result</dt><dd id="ackStatus">--</dd></div>
+      <details class="panel advanced-panel">
+        <summary>Advanced / Debug</summary>
+        <dl class="debug-grid" aria-label="Cloud connection details">
+          <div><dt>Signed in email</dt><dd id="debugUser">--</dd></div>
+          <div><dt>Device ID</dt><dd id="debugDevice">--</dd></div>
+          <div><dt>Firebase project</dt><dd id="debugProject">--</dd></div>
+          <div><dt>Last command ID</dt><dd id="lastCommandId">--</dd></div>
+          <div><dt>Last command type</dt><dd id="lastCommandType">--</dd></div>
+          <div><dt>Last command sequence</dt><dd id="lastCommandSeq">--</dd></div>
+          <div><dt>Last error</dt><dd id="debugLastError">None</dd></div>
+          <div><dt>Sequence number</dt><dd id="lastSeqStatus">--</dd></div>
+          <div><dt>Device schedule revision</dt><dd id="scheduleRevisionStatus">--</dd></div>
+          <div><dt>Firebase schedule revision</dt><dd id="firebaseScheduleRevisionStatus">--</dd></div>
+          <div><dt>Schedule save revision before</dt><dd id="scheduleSaveRevisionBefore">--</dd></div>
+          <div><dt>Schedule save revision after</dt><dd id="scheduleSaveRevisionAfter">--</dd></div>
+          <div><dt>Raw command result/code</dt><dd id="ackStatus" class="value-badge">--</dd></div>
         </dl>
-      </section>
+      </details>
     </section>
 
-    <p id="message" class="message" role="status"></p>
+    <dialog id="scheduleDialog" class="schedule-dialog">
+      <form id="scheduleEditorForm" class="modal-card" method="dialog">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Schedule Editor</p>
+            <h2>Edit schedule</h2>
+          </div>
+          <button id="closeScheduleEditorButton" class="icon-button" type="button" aria-label="Close schedule editor">&times;</button>
+        </div>
+
+        <p id="scheduleEditorError" class="message error" role="alert" hidden></p>
+        <p id="scheduleEditorNotice" class="message notice" role="status" hidden></p>
+        <p id="scheduleEditorWarning" class="message warning" role="status" hidden></p>
+        <div id="scheduleEditorList" class="schedule-list editor-list"></div>
+
+        <fieldset class="schedule-form">
+          <legend>Add event</legend>
+          <label>
+            Day
+            <select id="scheduleDay" required>
+              <option value="0">Sun</option>
+              <option value="1">Mon</option>
+              <option value="2">Tue</option>
+              <option value="3">Wed</option>
+              <option value="4">Thu</option>
+              <option value="5">Fri</option>
+              <option value="6">Sat</option>
+            </select>
+          </label>
+          <label>
+            Hour
+            <input id="scheduleHour" type="number" min="0" max="23" step="1" value="18" required>
+          </label>
+          <label>
+            Minute
+            <input id="scheduleMinute" type="number" min="0" max="59" step="1" value="0" required>
+          </label>
+          <label>
+            State
+            <select id="scheduleState" required>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <button id="addScheduleEventButton" type="submit">Add event</button>
+        </fieldset>
+
+        <div class="modal-actions">
+          <button id="cancelScheduleEditorButton" class="secondary" type="button">Cancel</button>
+          <button id="saveScheduleButton" type="button">Save changes</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 </body>
 </html>

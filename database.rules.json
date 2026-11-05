@@ -4,7 +4,43 @@
     ".write": false,
     "roles": {
       ".read": false,
-      ".write": false
+      ".write": false,
+      "admins": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      }
+    },
+    "conference": {
+      ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || auth != null && root.child('devices').child('shabbat-clock-01').child('meta').child('deviceUid').val() === auth.uid",
+      ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+      "enabled": {
+        ".read": true,
+        ".validate": "newData.isBoolean()"
+      },
+      "activeVisitor": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && root.child('conference').child('joinCode').isString() && newData.child('code').val() === root.child('conference').child('joinCode').val() && newData.child('uid').val() === auth.uid",
+        ".validate": "newData.hasChildren(['uid', 'code'])",
+        "uid": {
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true)",
+          ".validate": "newData.isString()"
+        },
+        "code": {
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "$other": {
+        ".validate": false
+      },
+      "joinCode": {
+        ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+        ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+      }
     },
     "devices": {
       "$deviceId": {
@@ -25,19 +61,21 @@
         },
         "control": {
           "nextSeq": {
-            ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
-            ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true && newData.exists() && newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
+            ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && root.child('conference').child('activeVisitor').child('uid').val() === auth.uid && $deviceId === 'shabbat-clock-01')",
+            ".write": "(auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && root.child('conference').child('activeVisitor').child('uid').val() === auth.uid && $deviceId === 'shabbat-clock-01')) && newData.exists() && newData.isNumber() && ((!data.exists() && newData.val() === 0) || (data.exists() && newData.val() === data.val() + 1))"
           },
           "$other": {
             ".validate": false
           }
         },
         "commands": {
-          ".indexOn": ["seq"],
+          ".indexOn": [
+            "seq"
+          ],
           ".read": "auth != null && (root.child('roles').child('admins').child(auth.uid).val() === true || root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid)",
           "$commandId": {
-            ".write": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true && !data.exists() && newData.exists()",
-            ".validate": "newData.hasChildren(['seq', 'type', 'payload', 'createdBy', 'createdAt']) && ((newData.child('type').val() === 'relay_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'on' || newData.child('payload').child('mode').val() === 'off' || newData.child('payload').child('mode').val() === 'auto')) || (newData.child('type').val() === 'shabbat_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'shabbat' || newData.child('payload').child('mode').val() === 'week')) || (newData.child('type').val() === 'replace_schedule' && newData.child('payload').hasChildren(['baseScheduleRevision', 'events']) && !newData.child('payload').child('mode').exists() && newData.child('payload').child('baseScheduleRevision').isNumber() && newData.child('payload').child('baseScheduleRevision').val() >= 0 && !newData.child('payload').child('events').isString() && !newData.child('payload').child('events').isNumber() && !newData.child('payload').child('events').isBoolean()))",
+            ".write": "(auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && root.child('conference').child('activeVisitor').child('uid').val() === auth.uid && $deviceId === 'shabbat-clock-01')) && !data.exists() && newData.exists()",
+            ".validate": "newData.hasChildren(['seq', 'type', 'payload', 'createdBy', 'createdAt', 'guest']) && ((newData.child('type').val() === 'relay_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('eventCount').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'on' || newData.child('payload').child('mode').val() === 'off' || newData.child('payload').child('mode').val() === 'auto')) || (newData.child('type').val() === 'shabbat_mode' && newData.child('payload').hasChildren(['mode']) && !newData.child('payload').child('baseScheduleRevision').exists() && !newData.child('payload').child('eventCount').exists() && !newData.child('payload').child('events').exists() && newData.child('payload').child('mode').isString() && (newData.child('payload').child('mode').val() === 'shabbat' || newData.child('payload').child('mode').val() === 'week')) || (newData.child('type').val() === 'replace_schedule' && newData.child('payload').hasChildren(['baseScheduleRevision', 'eventCount']) && !newData.child('payload').child('mode').exists() && newData.child('payload').child('baseScheduleRevision').isNumber() && newData.child('payload').child('baseScheduleRevision').val() >= 0 && newData.child('payload').child('eventCount').isNumber() && newData.child('payload').child('eventCount').val() >= 0 && newData.child('payload').child('eventCount').val() <= 32 && ((newData.child('payload').child('eventCount').val() === 0 && !newData.child('payload').child('events').exists()) || (newData.child('payload').child('eventCount').val() > 0 && newData.child('payload').hasChildren(['events']) && !newData.child('payload').child('events').isString() && !newData.child('payload').child('events').isNumber() && !newData.child('payload').child('events').isBoolean()))))",
             "seq": {
               ".validate": "newData.isNumber() && newData.val() > 0"
             },
@@ -50,6 +88,9 @@
               },
               "baseScheduleRevision": {
                 ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "eventCount": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 32"
               },
               "events": {
                 ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
@@ -84,11 +125,14 @@
             },
             "$other": {
               ".validate": false
+            },
+            "guest": {
+              ".validate": "newData.isBoolean() && newData.val() === (auth.token.firebase.sign_in_provider === 'anonymous')"
             }
           }
         },
         "acks": {
-          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && root.child('conference').child('activeVisitor').child('uid').val() === auth.uid && $deviceId === 'shabbat-clock-01')",
           "$commandId": {
             ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid && root.child('devices').child($deviceId).child('commands').child($commandId).exists() && !data.exists() && newData.exists()",
             ".validate": "newData.hasChildren(['seq', 'ok', 'code', 'message', 'ackedAt']) && newData.child('seq').val() === root.child('devices').child($deviceId).child('commands').child($commandId).child('seq').val()",
@@ -109,11 +153,12 @@
             },
             "$other": {
               ".validate": false
-            }
+            },
+            ".read": "auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && $deviceId === 'shabbat-clock-01' && root.child('devices').child($deviceId).child('commands').child($commandId).child('createdBy').val() === auth.uid"
           }
         },
         "state": {
-          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true",
+          ".read": "auth != null && root.child('roles').child('admins').child(auth.uid).val() === true || (auth != null && auth.token.firebase.sign_in_provider === 'anonymous' && root.child('conference').child('enabled').val() === true && $deviceId === 'shabbat-clock-01')",
           ".write": false,
           "status": {
             ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid",
@@ -151,9 +196,12 @@
           },
           "schedule": {
             ".write": "auth != null && root.child('devices').child($deviceId).child('meta').child('deviceUid').val() === auth.uid",
-            ".validate": "newData.hasChildren(['revision', 'events']) && !newData.child('events').isString() && !newData.child('events').isNumber() && !newData.child('events').isBoolean()",
+            ".validate": "newData.hasChildren(['revision', 'eventCount']) && newData.child('revision').isNumber() && newData.child('revision').val() >= 0 && newData.child('eventCount').isNumber() && newData.child('eventCount').val() >= 0 && newData.child('eventCount').val() <= 32 && ((newData.child('eventCount').val() === 0 && !newData.child('events').exists()) || (newData.child('eventCount').val() > 0 && newData.hasChildren(['events']) && !newData.child('events').isString() && !newData.child('events').isNumber() && !newData.child('events').isBoolean()))",
             "revision": {
               ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "eventCount": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 32"
             },
             "events": {
               ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",

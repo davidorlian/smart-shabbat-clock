@@ -59,6 +59,8 @@ struct CloudCommand {
   uint32_t seq;
   String type;
   String mode;
+  String createdBy;
+  bool guest;
   uint32_t baseScheduleRevision;
   ScheduleEntry events[MAX_EVENTS];
   uint8_t eventCount;
@@ -76,6 +78,12 @@ static String inFlightCommandId;
 static uint32_t inFlightSeq = 0;
 static bool pendingBootRecoveryAck = false;
 static bool forceStatusPublish = true;
+static bool forceSchedulePublish = true;
+static bool cloudReady = false;
+
+static void requestSchedulePublish() {
+  forceSchedulePublish = true;
+}
 
 static String jsonEscape(const String& value) {
   String out;
@@ -218,6 +226,18 @@ static bool findNumberValue(const String& json, const String& key, uint32_t& val
   return true;
 }
 
+static bool findBooleanValue(const String& json, const String& key, bool& value) {
+  int keyPos = json.indexOf("\"" + key + "\"");
+  if (keyPos < 0) return false;
+  int colon = json.indexOf(':', keyPos);
+  if (colon < 0) return false;
+  int pos = colon + 1;
+  while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\n' || json[pos] == '\r')) pos++;
+  if (json.substring(pos, pos + 4) == "true") { value = true; return true; }
+  if (json.substring(pos, pos + 5) == "false") { value = false; return true; }
+  return false;
+}
+
 static bool extractValueBlock(const String& json, const String& key, String& value) {
   int keyPos = json.indexOf("\"" + key + "\"");
   if (keyPos < 0) return false;
@@ -330,6 +350,10 @@ static bool parseCommandObject(const String& id, const String& object, CloudComm
 
   if (!findNumberValue(object, "seq", command.seq)) return false;
   if (!findStringValue(object, "type", command.type)) return false;
+  if (!findStringValue(object, "createdBy", command.createdBy)) return false;
+  // Legacy administrator commands have no guest field.
+  command.guest = false;
+  findBooleanValue(object, "guest", command.guest);
 
   if (command.type == "relay_mode" || command.type == "shabbat_mode") {
     return findStringValue(object, "mode", command.mode);
@@ -337,9 +361,18 @@ static bool parseCommandObject(const String& id, const String& object, CloudComm
 
   if (command.type == "replace_schedule") {
     if (!findNumberValue(object, "baseScheduleRevision", command.baseScheduleRevision)) return false;
+    uint32_t eventCount = 0;
+    if (!findNumberValue(object, "eventCount", eventCount)) return false;
+    if (eventCount > MAX_EVENTS) return false;
+    if (eventCount == 0) {
+      command.eventCount = 0;
+      return true;
+    }
+
     String eventsJson;
     if (!extractValueBlock(object, "events", eventsJson)) return false;
-    return parseEvents(eventsJson, command);
+    if (!parseEvents(eventsJson, command)) return false;
+    return command.eventCount == eventCount;
   }
 
   return true;
@@ -477,6 +510,7 @@ static bool signInIfNeeded() {
 
   idToken = token;
   tokenExpiresAtMs = millis() + ((expiresIn > 120 ? expiresIn - 60 : expiresIn) * 1000UL);
+  requestSchedulePublish();
   Serial.println("Firebase auth ready.");
   return true;
 }
@@ -519,7 +553,14 @@ static String statusJson() {
 }
 
 static String scheduleJson() {
-  String json = String("{\"revision\":") + String(scheduleRevision) + ",\"events\":[";
+  String json = String("{\"revision\":") + String(scheduleRevision) +
+                ",\"eventCount\":" + String(scheduleCount);
+  if (scheduleCount == 0) {
+    json += "}";
+    return json;
+  }
+
+  json += ",\"events\":[";
   for (uint8_t i = 0; i < scheduleCount; i++) {
     if (i > 0) json += ",";
     json += "{\"day\":" + String(schedule[i].day) +
@@ -560,12 +601,27 @@ static void publishStatusIfDue(bool force) {
   }
 }
 
-static void publishScheduleIfNeeded() {
-  if (scheduleRevision == lastPublishedScheduleRevision) return;
+static bool publishSchedule(bool force) {
+  if (!force && scheduleRevision == lastPublishedScheduleRevision) return true;
 
+  Serial.printf("%s schedule to Firebase state/schedule: revision %lu, events %u\n",
+                force ? "Force publishing" : "Publishing",
+                (unsigned long)scheduleRevision,
+                scheduleCount);
   if (putDatabaseJson(String("devices/") + FIREBASE_DEVICE_ID + "/state/schedule", scheduleJson())) {
     lastPublishedScheduleRevision = scheduleRevision;
+    return true;
   }
+  return false;
+}
+
+static bool publishScheduleIfNeeded() {
+  bool shouldForce = forceSchedulePublish;
+  if (publishSchedule(shouldForce)) {
+    forceSchedulePublish = false;
+    return true;
+  }
+  return false;
 }
 
 static bool writeAckFor(const String& commandId,
@@ -596,6 +652,23 @@ static ActionResult executeCommand(const CloudCommand& command) {
   return makeActionResult(false, "unsupported_command", "unsupported command type");
 }
 
+static bool guestStillControls(const CloudCommand& command) {
+  int statusCode = 0;
+  String response;
+  if (!httpRequest("GET", databaseUrl("conference"), "", statusCode, response)) {
+    Serial.println("Cannot verify guest command ownership. Rejecting command.");
+    return false;
+  }
+
+  bool enabled = false;
+  String activeVisitorJson;
+  String activeVisitorUid;
+  if (!findBooleanValue(response, "enabled", enabled) || !enabled) return false;
+  if (!extractValueBlock(response, "activeVisitor", activeVisitorJson)) return false;
+  if (!findStringValue(activeVisitorJson, "uid", activeVisitorUid)) return false;
+  return activeVisitorUid == command.createdBy;
+}
+
 static void pollOneCommand() {
   if (lastCommandPollMs != 0 && millis() - lastCommandPollMs < COMMAND_POLL_INTERVAL) return;
   lastCommandPollMs = millis();
@@ -623,7 +696,10 @@ static void pollOneCommand() {
                 command.type.c_str());
 
   saveInFlightCommand(command);
-  ActionResult result = executeCommand(command);
+  // Do not execute an old guest's queued command after control has changed.
+  ActionResult result = (command.guest && !guestStillControls(command))
+    ? makeActionResult(false, "guest_control_expired", "Guest no longer controls the clock")
+    : executeCommand(command);
   if (writeAckFor(command.id, command.seq, result)) {
     saveLastProcessedSeq(command.seq);
     clearInFlightCommand();
@@ -667,10 +743,23 @@ void initCloudSync() {
 
 void tickCloudSync() {
 #if CLOUD_SYNC_CONFIGURED
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (!signInIfNeeded()) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    cloudReady = false;
+    return;
+  }
+  if (!signInIfNeeded()) {
+    cloudReady = false;
+    return;
+  }
+
+  if (!cloudReady) {
+    cloudReady = true;
+    requestSchedulePublish();
+    forceStatusPublish = true;
+  }
 
   recoverInFlightAfterBoot();
+  publishScheduleIfNeeded();
   pollOneCommand();
   publishScheduleIfNeeded();
   publishStatusIfDue(forceStatusPublish);
